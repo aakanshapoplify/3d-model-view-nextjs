@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 from PIL import Image
 from typing import List, Tuple, Optional
-from .schema import Wall, Scene
+from ..geometry.schema import Wall, Scene
 import io
 
 

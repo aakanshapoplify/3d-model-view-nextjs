@@ -1,6 +1,6 @@
 from lxml import etree
 from typing import List, Tuple
-from .schema import Scene, Wall, Room
+from ..geometry.schema import Scene, Wall, Room
 
 Vec2 = Tuple[float, float]
 

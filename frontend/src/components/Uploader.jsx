@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 
 export default function Uploader({ onModelReady, onLoadingChange, onError }) {
   const [file, setFile] = useState(null)
-  const [fileType, setFileType] = useState('svg') // 'svg' or 'jpg'
+  const [fileType, setFileType] = useState('svg') // 'svg', 'jpg', or 'cad'
   const [pxToM, setPxToM] = useState(0.01)
   const [thickness, setThickness] = useState(0.15)
   const [height, setHeight] = useState(3.0)
@@ -27,9 +27,17 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
       fd.append('min_wall_length', String(minWallLength))
       
       // Choose endpoint based on file type
-      const endpoint = fileType === 'jpg' 
-        ? 'http://localhost:8083/convert/jpg-to-glb'
-        : 'http://localhost:8083/convert/svg-to-glb'
+      let endpoint
+      switch(fileType) {
+        case 'jpg':
+          endpoint = 'http://localhost:8083/convert/jpg-to-glb'
+          break
+        case 'cad':
+          endpoint = 'http://localhost:8083/convert/cad-to-glb'
+          break
+        default:
+          endpoint = 'http://localhost:8083/convert/svg-to-glb'
+      }
       
       // Add merge_walls only for SVG
       if (fileType === 'svg') {
@@ -53,9 +61,17 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
       
       // Check if the blob has content
       if (blob.size === 0) {
-        const errorMsg = fileType === 'jpg' 
-          ? 'Generated 3D model is empty. Please check your JPG image contains clear wall boundaries.'
-          : 'Generated 3D model is empty. Please check your SVG file contains valid wall elements.'
+        let errorMsg
+        switch(fileType) {
+          case 'jpg':
+            errorMsg = 'Generated 3D model is empty. Please check your JPG image contains clear wall boundaries.'
+            break
+          case 'cad':
+            errorMsg = 'Generated 3D model is empty. Please check your CAD file contains valid wall entities.'
+            break
+          default:
+            errorMsg = 'Generated 3D model is empty. Please check your SVG file contains valid wall elements.'
+        }
         setError(errorMsg)
         onError?.(errorMsg)
         return
@@ -81,6 +97,8 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
       const fileName = selectedFile.name.toLowerCase()
       if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
         setFileType('jpg')
+      } else if (fileName.endsWith('.dxf')) {
+        setFileType('cad')
       } else if (fileName.endsWith('.svg')) {
         setFileType('svg')
       }
@@ -100,23 +118,40 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
             checked={fileType === 'svg'} 
             onChange={e => setFileType(e.target.value)}
           />
-          SVG Floor Plan
+          SVG
         </label>
-        <label>
+        <label style={{ marginRight: '15px' }}>
           <input 
             type="radio" 
             value="jpg" 
             checked={fileType === 'jpg'} 
             onChange={e => setFileType(e.target.value)}
           />
-          JPG Image
+          JPG
+        </label>
+        <label>
+          <input 
+            type="radio" 
+            value="cad" 
+            checked={fileType === 'cad'} 
+            onChange={e => setFileType(e.target.value)}
+          />
+          CAD (DXF only)
         </label>
       </div>
 
-      <label>{fileType === 'jpg' ? 'JPG Floor Plan Image' : 'SVG Floor Plan'}</label>
+      <label>
+        {fileType === 'jpg' ? 'JPG Floor Plan Image' : 
+         fileType === 'cad' ? 'CAD Floor Plan File' : 
+         'SVG Floor Plan'}
+      </label>
       <input 
         type="file" 
-        accept={fileType === 'jpg' ? '.jpg,.jpeg' : '.svg'} 
+        accept={
+          fileType === 'jpg' ? '.jpg,.jpeg' : 
+          fileType === 'cad' ? '.dxf' : 
+          '.svg'
+        } 
         onChange={handleFileChange} 
       />
 
@@ -125,6 +160,8 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
       <small style={{ display: 'block', color: '#666', marginTop: 2 }}>
         {fileType === 'jpg' 
           ? 'How many meters each pixel represents (adjust based on image scale)'
+          : fileType === 'cad'
+          ? 'How many meters each CAD unit represents (check CAD file units)'
           : 'How many meters each pixel represents'
         }
       </small>
@@ -141,7 +178,7 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
         Filter out walls shorter than this length
       </small>
 
-      {fileType === 'jpg' && (
+      {(fileType === 'jpg' || fileType === 'cad') && (
         <div style={{ 
           marginTop: '10px', 
           padding: '10px', 
@@ -150,12 +187,25 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
           borderRadius: '4px',
           fontSize: '14px'
         }}>
-          <strong>JPG Processing Tips:</strong>
+          <strong>{fileType === 'jpg' ? 'JPG' : 'CAD'} Processing Tips:</strong>
           <ul style={{ margin: '5px 0 0 20px', padding: 0 }}>
-            <li>Use clear, high-contrast floor plan images</li>
-            <li>Ensure walls are clearly defined and visible</li>
-            <li>Adjust "Pixels → meters" based on your image scale</li>
-            <li>Try different "Min wall length" values if detection fails</li>
+            {fileType === 'jpg' ? (
+              <>
+                <li>Use clear, high-contrast floor plan images</li>
+                <li>Ensure walls are clearly defined and visible</li>
+                <li>Adjust "Pixels → meters" based on your image scale</li>
+                <li>Try different "Min wall length" values if detection fails</li>
+              </>
+            ) : (
+              <>
+                <li><strong>DXF files only:</strong> DWG files are not supported</li>
+                <li>Convert DWG to DXF using AutoCAD: File → Save As → DXF</li>
+                <li>Use CAD files with LINE, LWPOLYLINE, or POLYLINE entities</li>
+                <li>Check CAD file units and adjust "Pixels → meters" accordingly</li>
+                <li>Ensure architectural elements are clearly defined</li>
+                <li>Try different "Min wall length" values if detection fails</li>
+              </>
+            )}
           </ul>
         </div>
       )}
