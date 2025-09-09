@@ -9,6 +9,18 @@ export default function Viewer({ glbUrl, isLoading, error }) {
   const sceneRef = useRef(null)
   const controlsRef = useRef(null)
   const [loadingProgress, setLoadingProgress] = useState(0)
+  const [showDownloadButton, setShowDownloadButton] = useState(false)
+
+  const handleDownload = () => {
+    if (glbUrl) {
+      const link = document.createElement('a')
+      link.href = glbUrl
+      link.download = 'floorplan-3d-model.glb'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
+  }
 
   useEffect(() => {
     const mount = mountRef.current
@@ -155,7 +167,7 @@ export default function Viewer({ glbUrl, isLoading, error }) {
           
           model.position.y = 0
 
-          scene.add(model)
+        scene.add(model)
           
           // Adjust camera to fit the model
           const distance = Math.max(size.x, size.y, size.z) * 1.5
@@ -170,6 +182,7 @@ export default function Viewer({ glbUrl, isLoading, error }) {
           })
           
           setLoadingProgress(100)
+          setShowDownloadButton(true)
         },
         (progress) => {
           const percent = (progress.loaded / progress.total) * 100
@@ -268,5 +281,48 @@ export default function Viewer({ glbUrl, isLoading, error }) {
     )
   }
 
-  return <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
+  return (
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
+      {showDownloadButton && (
+        <div style={{
+          position: 'absolute',
+          top: '20px',
+          right: '20px',
+          zIndex: 1000
+        }}>
+          <button
+            onClick={handleDownload}
+            style={{
+              backgroundColor: '#3b82f6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '12px 20px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.2s ease',
+              opacity: 0.9
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.opacity = '1'
+              e.target.style.transform = 'translateY(-1px)'
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.opacity = '0.9'
+              e.target.style.transform = 'translateY(0)'
+            }}
+          >
+            <span>📥</span>
+            Download GLB
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }

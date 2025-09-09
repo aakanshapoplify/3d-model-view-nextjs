@@ -5,7 +5,7 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
   const [fileType, setFileType] = useState('svg') // 'svg', 'jpg', or 'cad'
   const [pxToM, setPxToM] = useState(0.01)
   const [thickness, setThickness] = useState(0.15)
-  const [height, setHeight] = useState(3.0)
+  const [height, setHeight] = useState(1.0)
   const [minWallLength, setMinWallLength] = useState(0.01)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -30,18 +30,18 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
       let endpoint
       switch(fileType) {
         case 'jpg':
-          endpoint = 'http://localhost:8083/convert/jpg-to-glb'
+          endpoint = 'http://localhost:8080/convert/jpg-to-glb'
           break
         case 'cad':
-          endpoint = 'http://localhost:8083/convert/cad-to-glb'
+          endpoint = 'http://localhost:8080/convert/cad-to-glb'
           break
         default:
-          endpoint = 'http://localhost:8083/convert/svg-to-glb'
+          endpoint = 'http://localhost:8080/convert/svg-to-glb'
       }
       
       // Add merge_walls only for SVG
       if (fileType === 'svg') {
-        fd.append('merge_walls', 'true')
+      fd.append('merge_walls', 'true')
       }
 
       const res = await fetch(endpoint, {
@@ -78,7 +78,13 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
       }
       
       const url = URL.createObjectURL(blob)
-      onModelReady(url)
+      const fileInfo = {
+        filename: file.name,
+        size: blob.size,
+        format: 'GLB',
+        type: fileType
+      }
+      onModelReady(url, fileInfo)
     } catch (error) {
       const errorMsg = `Network error: ${error.message}`
       setError(errorMsg)
@@ -210,7 +216,7 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
         </div>
       )}
 
-      <div style={{ marginTop: 12 }}>
+      <div style={{ marginTop: 12, display: 'flex', gap: '10px' }}>
         <button onClick={handleUpload} disabled={isLoading}>
           {isLoading ? 'Processing...' : `Convert ${fileType.toUpperCase()} to 3D`}
         </button>

@@ -255,10 +255,10 @@ def build_scene_mesh(scene: Scene) -> trimesh.Scene:
         sc = trimesh.Scene()
         sc.add_geometry(combined, node_name="floorplan_walls")
         
-        # Add a realistic floor if we have walls
+        # Add a transparent floor if we have walls
         if len(combined.vertices) > 0:
             try:
-                # Create a more realistic floor
+                # Create a transparent floor
                 bounds = combined.bounds
                 floor_width = bounds[1][0] - bounds[0][0]
                 floor_depth = bounds[1][2] - bounds[0][2]
@@ -277,8 +277,11 @@ def build_scene_mesh(scene: Scene) -> trimesh.Scene:
                 floor_center_z = (bounds[0][2] + bounds[1][2]) / 2
                 floor.apply_translation([floor_center_x, -floor_thickness/2, floor_center_z])
                 
+                # Make the floor transparent
+                floor.visual.face_colors = [128, 128, 128, 50]  # Grey with 50/255 transparency
+                
                 sc.add_geometry(floor, node_name="floor")
-                print(f"Added floor plane: {floor_width:.1f}m x {floor_depth:.1f}m")
+                print(f"Added transparent floor plane: {floor_width:.1f}m x {floor_depth:.1f}m")
             except Exception as e:
                 print(f"Could not add floor: {e}")
         
