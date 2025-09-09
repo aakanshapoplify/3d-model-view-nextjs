@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="480" viewBox="0 0 600 480">
+  <!-- rectangle 5m x 4m if px_to_m=0.01 -->
+  <polyline points="50,50 550,50 550,450 50,450 50,50" stroke="black" fill="none" stroke-width="2" />
+  <!-- a partition wall -->
+  <line x1="300" y1="50" x2="300" y2="450" stroke="black" stroke-width="2" />
+</svg>

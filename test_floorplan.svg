@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <!-- Simple room outline -->
+  <polyline points="50,50 350,50 350,250 50,250 50,50" stroke="black" fill="none" stroke-width="2" />
+  
+  <!-- Interior wall -->
+  <line x1="200" y1="50" x2="200" y2="250" stroke="black" stroke-width="2" />
+  
+  <!-- Door opening -->
+  <line x1="200" y1="150" x2="200" y2="200" stroke="red" stroke-width="1" />
+</svg>
