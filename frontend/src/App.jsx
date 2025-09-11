@@ -26,7 +26,9 @@ export default function App() {
     if (glbUrl) {
       const link = document.createElement('a')
       link.href = glbUrl
-      link.download = 'floorplan-3d-model.glb'
+      const format = fileInfo?.format?.toLowerCase() || 'glb'
+      const extension = format === 'gltf' ? 'gltf' : format
+      link.download = `floorplan-3d-model.${extension}`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -54,7 +56,7 @@ export default function App() {
           <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px' }}>
             <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#0369a1' }}>✅ Model Ready!</h3>
             <p style={{ margin: '0 0 15px 0', fontSize: '14px', color: '#0c4a6e' }}>
-              Your 3D model has been generated successfully. You can download it as a GLB file.
+              Your 3D model has been generated successfully. You can download it as a {fileInfo?.format?.toUpperCase() || 'GLB'} file.
             </p>
             {fileInfo && (
               <div style={{ marginBottom: '15px', fontSize: '12px', color: '#374151' }}>
@@ -89,7 +91,7 @@ export default function App() {
                 }}
               >
                 <span>📥</span>
-                Download GLB
+                Download {fileInfo?.format?.toUpperCase() || 'GLB'}
               </button>
               <button
                 onClick={handleReset}
@@ -126,6 +128,7 @@ export default function App() {
           glbUrl={glbUrl} 
           isLoading={isLoading}
           error={error}
+          fileInfo={fileInfo}
         />
       </div>
     </div>

@@ -1,5 +1,5 @@
 """
-CAD file processing module for converting DXF/DWG files to 3D floor plans
+CAD file processing module for converting DXF files to 3D floor plans
 """
 
 import ezdxf
@@ -9,14 +9,13 @@ from ..geometry.schema import Wall, Scene
 import numpy as np
 
 
-def detect_walls_from_cad(cad_data: bytes, px_to_m: float = 0.01, 
-                         wall_thickness: float = 0.15, wall_height: float = 3.0,
-                         min_wall_length: float = 0.01) -> Scene:
+def detect_walls_from_cad(cad_data: bytes, px_to_m: float = 0.01, wall_thickness: float = 0.15, 
+                         wall_height: float = 3.0, min_wall_length: float = 0.01) -> Scene:
     """
-    Convert CAD (DXF) file to 3D floor plan by detecting walls
+    Convert DXF file to 3D floor plan by detecting walls
     
     Args:
-        cad_data: Raw CAD file bytes
+        cad_data: Raw DXF file bytes
         px_to_m: Units to meters conversion factor (DXF files have their own units)
         wall_thickness: Thickness of walls in meters
         wall_height: Height of walls in meters
@@ -27,29 +26,14 @@ def detect_walls_from_cad(cad_data: bytes, px_to_m: float = 0.01,
     """
     
     try:
-        # Check if it's a DWG file (binary format)
-        if cad_data.startswith(b'AC10') or cad_data.startswith(b'AC10'):
-            raise ValueError("DWG files are not supported. Please convert your DWG file to DXF format first. You can do this in AutoCAD or other CAD software by using 'Save As' and selecting DXF format.")
+        # Load DXF document - ezdxf expects text input
+        if isinstance(cad_data, bytes):
+            # Convert bytes to text
+            text_data = cad_data.decode('utf-8')
+        else:
+            text_data = cad_data
         
-        # Load DXF document from bytes
-        # Try different encodings and formats
-        try:
-            doc = ezdxf.read(io.BytesIO(cad_data))
-        except Exception as e1:
-            try:
-                # Try reading as text first
-                doc = ezdxf.read(io.StringIO(cad_data.decode('utf-8')))
-            except Exception as e2:
-                try:
-                    # Try with different encoding
-                    doc = ezdxf.read(io.StringIO(cad_data.decode('latin-1')))
-                except Exception as e3:
-                    # Check if it might be a DWG file
-                    if b'AC10' in cad_data[:20] or b'AC10' in cad_data[:20]:
-                        raise ValueError("This appears to be a DWG file. DWG files are not supported. Please convert your DWG file to DXF format first.")
-                    else:
-                        raise ValueError(f"Could not read CAD file. Please ensure it's a valid DXF file. Error details: {str(e1)[:200]}")
-        
+        doc = ezdxf.read(io.StringIO(text_data))
         print(f"Loaded DXF file: {doc.dxfversion}")
         
         # Get model space
@@ -157,8 +141,8 @@ def detect_walls_from_cad(cad_data: bytes, px_to_m: float = 0.01,
         return Scene(walls=walls, rooms=[], wallThickness=wall_thickness, floorHeight=wall_height)
         
     except Exception as e:
-        print(f"Error processing CAD file: {e}")
-        raise ValueError(f"Failed to process CAD file: {str(e)}")
+        print(f"Error processing DXF file: {e}")
+        raise ValueError(f"Failed to process DXF file: {str(e)}")
 
 
 def arc_to_line_segments(arc, px_to_m: float, min_wall_length: float, segments: int = 8) -> List[Tuple]:
@@ -260,17 +244,15 @@ def spline_to_line_segments(spline, px_to_m: float, min_wall_length: float, segm
 
 
 def get_cad_info(cad_data: bytes) -> dict:
-    """Get information about the CAD file"""
+    """Get information about the DXF file"""
     try:
-        # Try different methods to read the DXF file
-        try:
-            doc = ezdxf.read(io.BytesIO(cad_data))
-        except Exception:
-            try:
-                doc = ezdxf.read(io.StringIO(cad_data.decode('utf-8')))
-            except Exception:
-                doc = ezdxf.read(io.StringIO(cad_data.decode('latin-1')))
+        # Convert bytes to text for ezdxf
+        if isinstance(cad_data, bytes):
+            text_data = cad_data.decode('utf-8')
+        else:
+            text_data = cad_data
         
+        doc = ezdxf.read(io.StringIO(text_data))
         msp = doc.modelspace()
         
         info = {

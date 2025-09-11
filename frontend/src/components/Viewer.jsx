@@ -1,9 +1,74 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
-export default function Viewer({ glbUrl, isLoading, error }) {
+// Helper function to process loaded models (both OBJ and GLB/GLTF)
+function processLoadedModel(model, scene, camera, controls, setLoadingProgress, setShowDownloadButton) {
+  // Enable shadows and enhance materials for all meshes
+  model.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true
+      child.receiveShadow = true
+      
+      // Enhance material properties based on geometry type
+      if (child.material) {
+        // Different materials for different parts
+        if (child.name.includes('floor')) {
+          // Floor material - more matte
+          child.material.color.setHex(0xf5f5f5)
+          child.material.metalness = 0.0
+          child.material.roughness = 0.9
+        } else {
+          // Wall material - slightly more reflective
+          child.material.color.setHex(0xe8e8e8)
+          child.material.metalness = 0.05
+          child.material.roughness = 0.7
+        }
+        
+        // Ensure material is properly configured
+        child.material.needsUpdate = true
+      }
+    }
+  })
+
+  // Center and scale the model
+  const box = new THREE.Box3().setFromObject(model)
+  const center = box.getCenter(new THREE.Vector3())
+  const size = box.getSize(new THREE.Vector3())
+  const maxDim = Math.max(size.x, size.y, size.z)
+  
+  // Only scale if the model is too large or too small
+  if (maxDim > 20 || maxDim < 1) {
+    const scale = 10 / maxDim
+    model.scale.setScalar(scale)
+    model.position.sub(center.multiplyScalar(scale))
+  } else {
+    model.position.sub(center)
+  }
+  
+  model.position.y = 0
+
+  scene.add(model)
+    
+  // Adjust camera to fit the model
+  const distance = Math.max(size.x, size.y, size.z) * 1.5
+  camera.position.set(distance, distance * 0.6, distance)
+  controls.target.copy(model.position)
+  controls.update()
+  
+  console.log(`Model loaded: ${model.children.length} children, bounds:`, {
+    center: center,
+    size: size,
+    maxDim: maxDim
+  })
+  
+  setLoadingProgress(100)
+  setShowDownloadButton(true)
+}
+
+export default function Viewer({ glbUrl, isLoading, error, fileInfo }) {
   const mountRef = useRef(null)
   const rendererRef = useRef(null)
   const sceneRef = useRef(null)
@@ -15,7 +80,9 @@ export default function Viewer({ glbUrl, isLoading, error }) {
     if (glbUrl) {
       const link = document.createElement('a')
       link.href = glbUrl
-      link.download = 'floorplan-3d-model.glb'
+      const format = fileInfo?.format?.toLowerCase() || 'glb'
+      const extension = format === 'gltf' ? 'gltf' : format
+      link.download = `floorplan-3d-model.${extension}`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -116,83 +183,80 @@ export default function Viewer({ glbUrl, isLoading, error }) {
 
     // Load model if URL is provided
     if (glbUrl) {
-      const loader = new GLTFLoader()
+      console.log('Loading 3D model from URL:', glbUrl)
+      console.log('File info:', fileInfo)
       
-      loader.load(
-        glbUrl,
-        (gltf) => {
-          const model = gltf.scene
-          
-          // Enable shadows and enhance materials for all meshes
-          model.traverse((child) => {
-            if (child.isMesh) {
-              child.castShadow = true
-              child.receiveShadow = true
-              
-              // Enhance material properties based on geometry type
-              if (child.material) {
-                // Different materials for different parts
-                if (child.name.includes('floor')) {
-                  // Floor material - more matte
-                  child.material.color.setHex(0xf5f5f5)
-                  child.material.metalness = 0.0
-                  child.material.roughness = 0.9
-                } else {
-                  // Wall material - slightly more reflective
-                  child.material.color.setHex(0xe8e8e8)
-                  child.material.metalness = 0.05
-                  child.material.roughness = 0.7
-                }
-                
-                // Ensure material is properly configured
-                child.material.needsUpdate = true
-              }
+      const format = fileInfo?.format?.toLowerCase() || 'glb'
+      
+      if (format === 'obj') {
+        // Load OBJ file
+        const loader = new OBJLoader()
+        
+        loader.load(
+          glbUrl,
+          (object) => {
+            console.log('OBJ loaded successfully:', object)
+            const model = object
+            
+            // Check if model has any geometry
+            if (!model || model.children.length === 0) {
+              console.error('Model is empty or has no children')
+              setLoadingProgress(0)
+              return
             }
-          })
-
-          // Center and scale the model
-          const box = new THREE.Box3().setFromObject(model)
-          const center = box.getCenter(new THREE.Vector3())
-          const size = box.getSize(new THREE.Vector3())
-          const maxDim = Math.max(size.x, size.y, size.z)
-          
-          // Only scale if the model is too large or too small
-          if (maxDim > 20 || maxDim < 1) {
-            const scale = 10 / maxDim
-            model.scale.setScalar(scale)
-            model.position.sub(center.multiplyScalar(scale))
-          } else {
-            model.position.sub(center)
+            
+            // Process the loaded model
+            processLoadedModel(model, scene, camera, controls, setLoadingProgress, setShowDownloadButton)
+          },
+          (progress) => {
+            const percent = (progress.loaded / progress.total) * 100
+            setLoadingProgress(percent)
+          },
+          (error) => {
+            console.error('Error loading OBJ model:', error)
+            console.error('Error details:', {
+              message: error.message,
+              url: glbUrl,
+              fileInfo: fileInfo
+            })
+            setLoadingProgress(0)
           }
-          
-          model.position.y = 0
-
-        scene.add(model)
-          
-          // Adjust camera to fit the model
-          const distance = Math.max(size.x, size.y, size.z) * 1.5
-          camera.position.set(distance, distance * 0.6, distance)
-          controls.target.copy(model.position)
-          controls.update()
-          
-          console.log(`Model loaded: ${model.children.length} children, bounds:`, {
-            center: center,
-            size: size,
-            maxDim: maxDim
-          })
-          
-          setLoadingProgress(100)
-          setShowDownloadButton(true)
-        },
-        (progress) => {
-          const percent = (progress.loaded / progress.total) * 100
-          setLoadingProgress(percent)
-        },
-        (error) => {
-          console.error('Error loading GLB:', error)
-          setLoadingProgress(0)
-        }
-      )
+        )
+      } else {
+        // Load GLB/GLTF file
+        const loader = new GLTFLoader()
+        
+        loader.load(
+          glbUrl,
+          (gltf) => {
+            console.log('GLTF loaded successfully:', gltf)
+            const model = gltf.scene
+            
+            // Check if model has any geometry
+            if (!model || model.children.length === 0) {
+              console.error('Model is empty or has no children')
+              setLoadingProgress(0)
+              return
+            }
+            
+            // Process the loaded model
+            processLoadedModel(model, scene, camera, controls, setLoadingProgress, setShowDownloadButton)
+          },
+          (progress) => {
+            const percent = (progress.loaded / progress.total) * 100
+            setLoadingProgress(percent)
+          },
+          (error) => {
+            console.error('Error loading 3D model:', error)
+            console.error('Error details:', {
+              message: error.message,
+              url: glbUrl,
+              fileInfo: fileInfo
+            })
+            setLoadingProgress(0)
+          }
+        )
+      }
     }
 
     const onResize = () => {
@@ -319,7 +383,7 @@ export default function Viewer({ glbUrl, isLoading, error }) {
             }}
           >
             <span>📥</span>
-            Download GLB
+            Download {fileInfo?.format?.toUpperCase() || 'GLB'}
           </button>
         </div>
       )}

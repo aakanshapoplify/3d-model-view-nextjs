@@ -1,8 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 
 export default function Uploader({ onModelReady, onLoadingChange, onError }) {
   const [file, setFile] = useState(null)
   const [fileType, setFileType] = useState('svg') // 'svg', 'jpg', or 'cad'
+  const [outputFormat, setOutputFormat] = useState('glb') // 'glb', 'obj', 'gltf'
   const [pxToM, setPxToM] = useState(0.01)
   const [thickness, setThickness] = useState(0.15)
   const [height, setHeight] = useState(1.0)
@@ -26,17 +27,23 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
       fd.append('wall_height', String(height))
       fd.append('min_wall_length', String(minWallLength))
       
-      // Choose endpoint based on file type
+      // Choose endpoint based on file type and output format
       let endpoint
-      switch(fileType) {
-        case 'jpg':
-          endpoint = 'http://localhost:8080/convert/jpg-to-glb'
-          break
-        case 'cad':
-          endpoint = 'http://localhost:8080/convert/cad-to-glb'
-          break
-        default:
-          endpoint = 'http://localhost:8080/convert/svg-to-glb'
+      if (fileType === 'cad') {
+        switch(outputFormat) {
+          case 'obj':
+            endpoint = 'http://localhost:8000/convert/cad-to-obj'
+            break
+          case 'gltf':
+            endpoint = 'http://localhost:8000/convert/cad-to-gltf'
+            break
+          default:
+            endpoint = 'http://localhost:8000/convert/cad-to-glb'
+        }
+      } else if (fileType === 'jpg') {
+        endpoint = 'http://localhost:8000/convert/jpg-to-glb' // JPG only supports GLB for now
+      } else {
+        endpoint = 'http://localhost:8000/convert/svg-to-glb' // SVG only supports GLB for now
       }
       
       // Add merge_walls only for SVG
@@ -78,10 +85,22 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
       }
       
       const url = URL.createObjectURL(blob)
+      
+      // Determine actual format based on response headers or content
+      let actualFormat = outputFormat.toUpperCase()
+      const contentType = res.headers.get('content-type')
+      if (contentType && contentType.includes('gltf-binary')) {
+        actualFormat = 'GLB'
+      } else if (contentType && contentType.includes('gltf+json')) {
+        actualFormat = 'GLTF'
+      } else if (contentType && contentType.includes('obj')) {
+        actualFormat = 'OBJ'
+      }
+      
       const fileInfo = {
         filename: file.name,
         size: blob.size,
-        format: 'GLB',
+        format: actualFormat,
         type: fileType
       }
       onModelReady(url, fileInfo)
@@ -142,9 +161,45 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
             checked={fileType === 'cad'} 
             onChange={e => setFileType(e.target.value)}
           />
-          CAD (DXF only)
+          CAD (DXF)
         </label>
       </div>
+
+      {/* Output Format Selection - only show for CAD files */}
+      {fileType === 'cad' && (
+        <>
+          <label>Output Format</label>
+          <div style={{ marginBottom: '10px' }}>
+            <label style={{ marginRight: '15px' }}>
+              <input 
+                type="radio" 
+                value="glb" 
+                checked={outputFormat === 'glb'} 
+                onChange={e => setOutputFormat(e.target.value)}
+              />
+              GLB (Binary)
+            </label>
+            <label style={{ marginRight: '15px' }}>
+              <input 
+                type="radio" 
+                value="obj" 
+                checked={outputFormat === 'obj'} 
+                onChange={e => setOutputFormat(e.target.value)}
+              />
+              OBJ
+            </label>
+            <label>
+              <input 
+                type="radio" 
+                value="gltf" 
+                checked={outputFormat === 'gltf'} 
+                onChange={e => setOutputFormat(e.target.value)}
+              />
+              GLTF (JSON)
+            </label>
+          </div>
+        </>
+      )}
 
       <label>
         {fileType === 'jpg' ? 'JPG Floor Plan Image' : 
@@ -204,9 +259,7 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
               </>
             ) : (
               <>
-                <li><strong>DXF files only:</strong> DWG files are not supported</li>
-                <li>Convert DWG to DXF using AutoCAD: File → Save As → DXF</li>
-                <li>Use CAD files with LINE, LWPOLYLINE, or POLYLINE entities</li>
+                <li>Use DXF files with LINE, LWPOLYLINE, or POLYLINE entities</li>
                 <li>Check CAD file units and adjust "Pixels → meters" accordingly</li>
                 <li>Ensure architectural elements are clearly defined</li>
                 <li>Try different "Min wall length" values if detection fails</li>
