@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import CloudinaryIntegration from './CloudinaryIntegration'
 
 export default function Uploader({ onModelReady, onLoadingChange, onError }) {
   const [file, setFile] = useState(null)
@@ -10,6 +11,19 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
   const [minWallLength, setMinWallLength] = useState(0.01)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [cloudinaryEnabled, setCloudinaryEnabled] = useState(false)
+  const [cloudinaryFiles, setCloudinaryFiles] = useState([])
+  
+  // Initialize Cloudinary integration
+  const cloudinary = CloudinaryIntegration({
+    onImageProcessed: (result) => {
+      console.log('Image processed:', result);
+    },
+    onModelUploaded: (result) => {
+      console.log('3D model uploaded:', result);
+      setCloudinaryFiles(prev => [...prev, result]);
+    }
+  });
 
   const handleUpload = async () => {
     if (!file) return
@@ -41,7 +55,16 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
             endpoint = 'http://localhost:8000/convert/cad-to-glb'
         }
       } else if (fileType === 'jpg') {
-        endpoint = 'http://localhost:8000/convert/jpg-to-glb' // JPG only supports GLB for now
+        switch(outputFormat) {
+          case 'obj':
+            endpoint = 'http://localhost:8000/convert/jpg-to-obj'
+            break
+          case 'gltf':
+            endpoint = 'http://localhost:8000/convert/jpg-to-gltf'
+            break
+          default:
+            endpoint = 'http://localhost:8000/convert/jpg-to-glb'
+        }
       } else {
         endpoint = 'http://localhost:8000/convert/svg-to-glb' // SVG only supports GLB for now
       }
@@ -51,10 +74,17 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
       fd.append('merge_walls', 'true')
       }
 
+      console.log('Making request to:', endpoint)
+      console.log('File type:', fileType)
+      console.log('Output format:', outputFormat)
+      
       const res = await fetch(endpoint, {
         method: 'POST',
         body: fd
       })
+      
+      console.log('Response status:', res.status)
+      console.log('Response headers:', res.headers)
       
       if (!res.ok) {
         const errorData = await res.json()
@@ -97,6 +127,18 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
         actualFormat = 'OBJ'
       }
       
+      // Upload to Cloudinary if enabled
+      if (cloudinaryEnabled) {
+        try {
+          const modelFile = new File([blob], `${file.name.split('.')[0]}.${actualFormat.toLowerCase()}`, {
+            type: blob.type || 'application/octet-stream'
+          });
+          await cloudinary.upload3DModel(modelFile, actualFormat.toLowerCase());
+        } catch (cloudinaryError) {
+          console.warn('Cloudinary upload failed:', cloudinaryError);
+        }
+      }
+      
       const fileInfo = {
         filename: file.name,
         size: blob.size,
@@ -105,6 +147,7 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
       }
       onModelReady(url, fileInfo)
     } catch (error) {
+      console.error('Upload error:', error)
       const errorMsg = `Network error: ${error.message}`
       setError(errorMsg)
       onError?.(errorMsg)
@@ -165,8 +208,8 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
         </label>
       </div>
 
-      {/* Output Format Selection - only show for CAD files */}
-      {fileType === 'cad' && (
+      {/* Output Format Selection - show for CAD and JPG files */}
+      {(fileType === 'cad' || fileType === 'jpg') && (
         <>
           <label>Output Format</label>
           <div style={{ marginBottom: '10px' }}>
@@ -200,6 +243,26 @@ export default function Uploader({ onModelReady, onLoadingChange, onError }) {
           </div>
         </>
       )}
+
+      {/* Cloudinary Integration */}
+      <div style={{ marginBottom: '15px', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', backgroundColor: '#f9f9f9' }}>
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
+          <input 
+            type="checkbox" 
+            checked={cloudinaryEnabled} 
+            onChange={e => setCloudinaryEnabled(e.target.checked)}
+            style={{ marginRight: '8px' }}
+          />
+          <strong>Enable Cloudinary Cloud Storage</strong>
+        </label>
+        {cloudinaryEnabled && (
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            <p>✅ 3D models will be automatically uploaded to Cloudinary</p>
+            <p>✅ Professional image processing available</p>
+            <p>✅ Cloud storage for generated models</p>
+          </div>
+        )}
+      </div>
 
       <label>
         {fileType === 'jpg' ? 'JPG Floor Plan Image' : 

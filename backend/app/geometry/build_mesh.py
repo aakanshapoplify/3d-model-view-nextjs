@@ -2,7 +2,7 @@
 import numpy as np
 import trimesh
 from typing import List, Tuple
-from .schema import Scene, Wall
+from .schema import Scene, Wall, Door, Window
 
 # Create a rectangular prism for each wall segment and combine them into a scene.
 # We build local axis-aligned box then rotate & translate it along segment.
@@ -32,7 +32,7 @@ def wall_mesh(w: Wall) -> trimesh.Trimesh:
     # Translate to start position
     box.apply_translation(start)
     
-    # Add visual enhancements
+    # Add visual enhancements for better architectural representation
     try:
         # Ensure proper normals
         if hasattr(box, 'fix_normals'):
@@ -42,17 +42,24 @@ def wall_mesh(w: Wall) -> trimesh.Trimesh:
         box.remove_duplicate_faces()
         box.remove_degenerate_faces()
         
-        # Add some visual detail - create a slight bevel effect
-        if length > 1.0:  # Only for longer walls
-            # Create a slightly tapered top edge
+        # Add architectural details based on wall characteristics
+        if length > 2.0:  # Only for longer walls
+            # Create architectural details
             vertices = box.vertices.copy()
             face_centers = box.vertices[box.faces].mean(axis=1)
-            top_faces = face_centers[:, 1] > w.height * 0.8
             
+            # Add baseboard detail (slight protrusion at bottom)
+            baseboard_faces = face_centers[:, 1] < w.height * 0.1
+            if np.any(baseboard_faces):
+                # Slightly extend the baseboard
+                vertices[vertices[:, 1] < w.height * 0.1, 2] *= 1.1
+                box.vertices = vertices
+            
+            # Add crown molding detail (slight protrusion at top)
+            top_faces = face_centers[:, 1] > w.height * 0.9
             if np.any(top_faces):
-                # Slightly reduce the top edge thickness
-                top_vertices = vertices[:, 1] > w.height * 0.9
-                vertices[top_vertices, 2] *= 0.95  # Slight taper
+                # Slightly extend the crown molding
+                vertices[vertices[:, 1] > w.height * 0.9, 2] *= 1.05
                 box.vertices = vertices
         
     except Exception as e:
@@ -66,13 +73,13 @@ def wall_mesh(w: Wall) -> trimesh.Trimesh:
     return box
 
 def merge_connected_walls(walls: List[Wall], tolerance: float = 0.01) -> List[Wall]:
-    """Improved wall merging - remove duplicates and merge collinear walls"""
+    """Simplified wall merging - remove duplicates only"""
     if not walls:
         return walls
     
     print(f"Starting with {len(walls)} walls")
     
-    # First pass: remove exact duplicates and very short walls
+    # Remove exact duplicates and very short walls
     unique_walls = []
     seen_segments = set()
     
@@ -90,37 +97,8 @@ def merge_connected_walls(walls: List[Wall], tolerance: float = 0.01) -> List[Wa
                 unique_walls.append(wall)
     
     print(f"After removing duplicates: {len(unique_walls)} walls")
-    
-    # Second pass: merge collinear walls (simplified approach)
-    merged_walls = []
-    used_indices = set()
-    
-    for i, wall1 in enumerate(unique_walls):
-        if i in used_indices:
-            continue
-            
-        # Find collinear walls that can be merged
-        merged_wall = wall1
-        merged_count = 0
-        
-        for j, wall2 in enumerate(unique_walls[i+1:], i+1):
-            if j in used_indices:
-                continue
-                
-            # Check if walls are collinear and connected
-            if are_walls_mergeable(merged_wall, wall2, tolerance):
-                merged_wall = merge_two_walls(merged_wall, wall2)
-                used_indices.add(j)
-                merged_count += 1
-        
-        merged_walls.append(merged_wall)
-        used_indices.add(i)
-        
-        if merged_count > 0:
-            print(f"Merged {merged_count + 1} walls into one")
-    
-    print(f"Final merged walls: {len(merged_walls)}")
-    return merged_walls
+    print(f"Final merged walls: {len(unique_walls)}")
+    return unique_walls
 
 def are_walls_mergeable(wall1: Wall, wall2: Wall, tolerance: float) -> bool:
     """Check if two walls can be merged (collinear and connected)"""
@@ -183,8 +161,56 @@ def merge_two_walls(wall1: Wall, wall2: Wall) -> Wall:
         height=wall1.height
     )
 
+def door_mesh(door: Door) -> trimesh.Trimesh:
+    """Create a 3D door mesh"""
+    # Create door frame
+    frame_thickness = 0.1
+    frame_width = door.width + 0.2
+    frame_height = door.height + 0.2
+    
+    # Door frame
+    frame = trimesh.creation.box(extents=(frame_width, frame_height, frame_thickness))
+    frame.apply_translation([0, frame_height/2, 0])
+    
+    # Door panel
+    door_panel = trimesh.creation.box(extents=(door.width, door.height, door.thickness))
+    door_panel.apply_translation([0, door.height/2, frame_thickness/2 + door.thickness/2])
+    
+    # Combine frame and panel
+    door_mesh = trimesh.util.concatenate([frame, door_panel])
+    
+    # Position the door
+    door_mesh.apply_translation([door.position[0], 0, door.position[1]])
+    
+    return door_mesh
+
+
+def window_mesh(window: Window) -> trimesh.Trimesh:
+    """Create a 3D window mesh"""
+    # Window frame
+    frame_thickness = 0.1
+    frame_width = window.width + 0.2
+    frame_height = window.height + 0.2
+    
+    # Window frame
+    frame = trimesh.creation.box(extents=(frame_width, frame_height, frame_thickness))
+    frame.apply_translation([0, window.sill_height + frame_height/2, 0])
+    
+    # Window glass (transparent)
+    glass = trimesh.creation.box(extents=(window.width, window.height, window.thickness))
+    glass.apply_translation([0, window.sill_height + window.height/2, frame_thickness/2 + window.thickness/2])
+    
+    # Combine frame and glass
+    window_mesh = trimesh.util.concatenate([frame, glass])
+    
+    # Position the window
+    window_mesh.apply_translation([window.position[0], 0, window.position[1]])
+    
+    return window_mesh
+
+
 def build_scene_mesh(scene: Scene) -> trimesh.Scene:
-    print(f"Building scene with {len(scene.walls)} walls")
+    print(f"Building scene with {len(scene.walls)} walls, {len(scene.doors)} doors, {len(scene.windows)} windows")
     
     # Merge connected walls to reduce geometry
     merged_walls = merge_connected_walls(scene.walls)
@@ -211,6 +237,34 @@ def build_scene_mesh(scene: Scene) -> trimesh.Scene:
             continue
     
     print(f"Created {valid_meshes} valid wall meshes")
+    
+    # Create door meshes
+    for i, door in enumerate(scene.doors):
+        try:
+            mesh = door_mesh(door)
+            if mesh is not None and hasattr(mesh, 'vertices') and len(mesh.vertices) > 0:
+                meshes.append(mesh)
+                valid_meshes += 1
+            else:
+                print(f"Skipped door {i} (invalid)")
+        except Exception as e:
+            print(f"Error creating mesh for door {i}: {e}")
+            continue
+    
+    # Create window meshes
+    for i, window in enumerate(scene.windows):
+        try:
+            mesh = window_mesh(window)
+            if mesh is not None and hasattr(mesh, 'vertices') and len(mesh.vertices) > 0:
+                meshes.append(mesh)
+                valid_meshes += 1
+            else:
+                print(f"Skipped window {i} (invalid)")
+        except Exception as e:
+            print(f"Error creating mesh for window {i}: {e}")
+            continue
+    
+    print(f"Created {valid_meshes} total valid meshes (walls + doors + windows)")
     
     if not meshes:
         print("No valid meshes created")

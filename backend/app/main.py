@@ -2,15 +2,18 @@ import io
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from .processors import parse_svg, detect_walls_from_image, detect_walls_from_cad, get_cad_info
+from .processors import parse_svg, get_cad_info
+from .processors.simple_image_processor import detect_walls_from_image
+from .processors.cad_processor import detect_walls_from_cad
 from .geometry.build_mesh import build_scene_mesh
+from .services import cloudinary_service
 
 app = FastAPI(title="2D→3D Converter", version="0.1.0")
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8082", "http://127.0.0.1:8082", "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8083", "http://127.0.0.1:8083"],
+    allow_origins=["http://localhost:8082", "http://127.0.0.1:8082", "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8083", "http://127.0.0.1:8083", "http://localhost:8084", "http://127.0.0.1:8084"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -106,14 +109,26 @@ async def convert_jpg_to_glb(
         # Read image data
         image_data = await file.read()
         
-        # Detect walls from image
-        scene = detect_walls_from_image(
-            image_data, 
-            px_to_m=px_to_m, 
-            wall_thickness=wall_thickness, 
-            wall_height=wall_height,
-            min_wall_length=min_wall_length
-        )
+        # Save image data to temporary file
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
+            tmp_file.write(image_data)
+            tmp_file_path = tmp_file.name
+        
+        try:
+            # Detect walls from image
+            scene = detect_walls_from_image(
+                tmp_file_path, 
+                px_to_m=px_to_m, 
+                wall_thickness=wall_thickness, 
+                wall_height=wall_height,
+                min_wall_length=min_wall_length
+            )
+        finally:
+            # Clean up temporary file
+            os.unlink(tmp_file_path)
         
         print(f"Detected {len(scene.walls)} walls from image")
         
@@ -152,6 +167,208 @@ async def convert_jpg_to_glb(
         
         headers = {"Content-Disposition": "attachment; filename=scene.glb"}
         return StreamingResponse(buf, media_type="model/gltf-binary", headers=headers)
+        
+    except Exception as e:
+        print(f"Error processing JPG: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": f"Failed to process JPG: {str(e)}"}, status_code=500)
+
+
+@app.post("/convert/jpg-to-obj")
+async def convert_jpg_to_obj(
+    file: UploadFile = File(...),
+    px_to_m: float = Form(0.01),
+    wall_thickness: float = Form(0.15),
+    wall_height: float = Form(3.0),
+    min_wall_length: float = Form(0.01),
+):
+    """Convert JPG image to 3D floor plan (OBJ format)"""
+    
+    # Check file type
+    if file.content_type not in ("image/jpeg", "image/jpg"):
+        return JSONResponse({"error": "Upload a JPG/JPEG file."}, status_code=400)
+    
+    try:
+        # Read image data
+        image_data = await file.read()
+        
+        # Save image data to temporary file
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
+            tmp_file.write(image_data)
+            tmp_file_path = tmp_file.name
+        
+        try:
+            # Detect walls from image
+            scene = detect_walls_from_image(
+                tmp_file_path, 
+                px_to_m=px_to_m, 
+                wall_thickness=wall_thickness, 
+                wall_height=wall_height,
+                min_wall_length=min_wall_length
+            )
+        finally:
+            # Clean up temporary file
+            os.unlink(tmp_file_path)
+        
+        print(f"Detected {len(scene.walls)} walls from image")
+        
+        if not scene.walls:
+            return JSONResponse({
+                "error": "No walls detected in image. Try:\n" +
+                        "1. Using a clearer floor plan image\n" +
+                        "2. Adjusting the px_to_m parameter\n" +
+                        "3. Reducing min_wall_length\n" +
+                        "4. Using an image with more defined wall boundaries"
+            }, status_code=400)
+        
+        # Print wall statistics
+        wall_lengths = [((w.end[0] - w.start[0])**2 + (w.end[1] - w.start[1])**2)**0.5 for w in scene.walls]
+        if wall_lengths:
+            print(f"Wall length stats: min={min(wall_lengths):.3f}m, max={max(wall_lengths):.3f}m, avg={sum(wall_lengths)/len(wall_lengths):.3f}m")
+        
+        # Build 3D mesh
+        tm_scene = build_scene_mesh(scene)
+        
+        if not tm_scene.geometry:
+            return JSONResponse({
+                "error": "Failed to create 3D geometry from detected walls. This might be due to:\n" +
+                        "1. Image quality is too low\n" +
+                        "2. Wall detection parameters need adjustment\n" +
+                        "3. Image doesn't contain clear architectural elements"
+            }, status_code=500)
+
+        # Export to OBJ with GLB fallback
+        buf = io.BytesIO()
+        try:
+            tm_scene.export(buf, file_type='obj')
+            file_size = buf.tell()
+            if file_size == 0:
+                print("OBJ export failed, trying GLB export as fallback...")
+                buf = io.BytesIO()
+                tm_scene.export(buf, file_type='glb')
+                file_size = buf.tell()
+                buf.seek(0)
+                print(f"Generated GLB file from JPG (OBJ fallback): {file_size} bytes")
+                headers = {"Content-Disposition": "attachment; filename=scene.glb"}
+                return StreamingResponse(buf, media_type="model/gltf-binary", headers=headers)
+            buf.seek(0)
+            print(f"Generated OBJ file from JPG: {file_size} bytes")
+            headers = {"Content-Disposition": "attachment; filename=scene.obj"}
+            return StreamingResponse(buf, media_type="application/obj", headers=headers)
+        except Exception as obj_error:
+            print(f"OBJ export failed: {obj_error}, trying GLB fallback...")
+            buf = io.BytesIO()
+            tm_scene.export(buf, file_type='glb')
+            file_size = buf.tell()
+            buf.seek(0)
+            print(f"Generated GLB file from JPG (OBJ fallback): {file_size} bytes")
+            headers = {"Content-Disposition": "attachment; filename=scene.glb"}
+            return StreamingResponse(buf, media_type="model/gltf-binary", headers=headers)
+        
+    except Exception as e:
+        print(f"Error processing JPG: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": f"Failed to process JPG: {str(e)}"}, status_code=500)
+
+
+@app.post("/convert/jpg-to-gltf")
+async def convert_jpg_to_gltf(
+    file: UploadFile = File(...),
+    px_to_m: float = Form(0.01),
+    wall_thickness: float = Form(0.15),
+    wall_height: float = Form(3.0),
+    min_wall_length: float = Form(0.01),
+):
+    """Convert JPG image to 3D floor plan (GLTF format)"""
+    
+    # Check file type
+    if file.content_type not in ("image/jpeg", "image/jpg"):
+        return JSONResponse({"error": "Upload a JPG/JPEG file."}, status_code=400)
+    
+    try:
+        # Read image data
+        image_data = await file.read()
+        
+        # Save image data to temporary file
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
+            tmp_file.write(image_data)
+            tmp_file_path = tmp_file.name
+        
+        try:
+            # Detect walls from image
+            scene = detect_walls_from_image(
+                tmp_file_path, 
+                px_to_m=px_to_m, 
+                wall_thickness=wall_thickness, 
+                wall_height=wall_height,
+                min_wall_length=min_wall_length
+            )
+        finally:
+            # Clean up temporary file
+            os.unlink(tmp_file_path)
+        
+        print(f"Detected {len(scene.walls)} walls from image")
+        
+        if not scene.walls:
+            return JSONResponse({
+                "error": "No walls detected in image. Try:\n" +
+                        "1. Using a clearer floor plan image\n" +
+                        "2. Adjusting the px_to_m parameter\n" +
+                        "3. Reducing min_wall_length\n" +
+                        "4. Using an image with more defined wall boundaries"
+            }, status_code=400)
+        
+        # Print wall statistics
+        wall_lengths = [((w.end[0] - w.start[0])**2 + (w.end[1] - w.start[1])**2)**0.5 for w in scene.walls]
+        if wall_lengths:
+            print(f"Wall length stats: min={min(wall_lengths):.3f}m, max={max(wall_lengths):.3f}m, avg={sum(wall_lengths)/len(wall_lengths):.3f}m")
+        
+        # Build 3D mesh
+        tm_scene = build_scene_mesh(scene)
+        
+        if not tm_scene.geometry:
+            return JSONResponse({
+                "error": "Failed to create 3D geometry from detected walls. This might be due to:\n" +
+                        "1. Image quality is too low\n" +
+                        "2. Wall detection parameters need adjustment\n" +
+                        "3. Image doesn't contain clear architectural elements"
+            }, status_code=500)
+
+        # Export to GLTF with GLB fallback
+        buf = io.BytesIO()
+        try:
+            tm_scene.export(buf, file_type='gltf')
+            file_size = buf.tell()
+            if file_size == 0:
+                print("GLTF export failed, trying GLB export as fallback...")
+                buf = io.BytesIO()
+                tm_scene.export(buf, file_type='glb')
+                file_size = buf.tell()
+                buf.seek(0)
+                print(f"Generated GLB file from JPG (GLTF fallback): {file_size} bytes")
+                headers = {"Content-Disposition": "attachment; filename=scene.glb"}
+                return StreamingResponse(buf, media_type="model/gltf-binary", headers=headers)
+            buf.seek(0)
+            print(f"Generated GLTF file from JPG: {file_size} bytes")
+            headers = {"Content-Disposition": "attachment; filename=scene.gltf"}
+            return StreamingResponse(buf, media_type="model/gltf+json", headers=headers)
+        except Exception as gltf_error:
+            print(f"GLTF export failed: {gltf_error}, trying GLB fallback...")
+            buf = io.BytesIO()
+            tm_scene.export(buf, file_type='glb')
+            file_size = buf.tell()
+            buf.seek(0)
+            print(f"Generated GLB file from JPG (GLTF fallback): {file_size} bytes")
+            headers = {"Content-Disposition": "attachment; filename=scene.glb"}
+            return StreamingResponse(buf, media_type="model/gltf-binary", headers=headers)
         
     except Exception as e:
         print(f"Error processing JPG: {e}")
@@ -448,7 +665,11 @@ async def get_supported_formats():
                 "type": "jpg",
                 "extensions": [".jpg", ".jpeg"],
                 "description": "JPEG floor plan images",
-                "endpoint": "/convert/jpg-to-glb"
+                "endpoints": {
+                    "glb": "/convert/jpg-to-glb",
+                    "obj": "/convert/jpg-to-obj",
+                    "gltf": "/convert/jpg-to-gltf"
+                }
             },
             {
                 "type": "cad",
@@ -462,3 +683,104 @@ async def get_supported_formats():
             }
         ]
     }
+
+
+# Cloudinary endpoints
+@app.post("/cloudinary/upload")
+async def upload_to_cloudinary(file: UploadFile = File(...), folder: str = "3d-models"):
+    """Upload file to Cloudinary"""
+    try:
+        file_data = await file.read()
+        result = cloudinary_service.upload_file(file_data, file.filename, folder)
+        
+        if result["success"]:
+            return JSONResponse(content={
+                "message": "File uploaded successfully",
+                "public_id": result["public_id"],
+                "secure_url": result["secure_url"],
+                "format": result["format"],
+                "bytes": result["bytes"]
+            })
+        else:
+            return JSONResponse(content={"error": result["error"]}, status_code=400)
+            
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.post("/cloudinary/process-image")
+async def process_image_for_3d(image_url: str, transformations: dict = None):
+    """Process image for 3D model generation using Cloudinary"""
+    try:
+        result = cloudinary_service.process_image_for_3d(image_url, transformations)
+        
+        if result["success"]:
+            return JSONResponse(content={
+                "message": "Image processed successfully",
+                "processed_url": result["processed_url"],
+                "transformations": result["transformations"]
+            })
+        else:
+            return JSONResponse(content={"error": result["error"]}, status_code=400)
+            
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.post("/cloudinary/upload-3d-model")
+async def upload_3d_model(file: UploadFile = File(...), format: str = "glb"):
+    """Upload 3D model to Cloudinary"""
+    try:
+        file_data = await file.read()
+        result = cloudinary_service.upload_3d_model(file_data, file.filename, format)
+        
+        if result["success"]:
+            return JSONResponse(content={
+                "message": "3D model uploaded successfully",
+                "public_id": result["public_id"],
+                "secure_url": result["secure_url"],
+                "format": result["format"],
+                "bytes": result["bytes"]
+            })
+        else:
+            return JSONResponse(content={"error": result["error"]}, status_code=400)
+            
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.get("/cloudinary/files")
+async def list_cloudinary_files(folder: str = "3d-models", max_results: int = 50):
+    """List files in Cloudinary folder"""
+    try:
+        result = cloudinary_service.list_files(folder, max_results)
+        
+        if result["success"]:
+            return JSONResponse(content={
+                "message": "Files retrieved successfully",
+                "resources": result["resources"],
+                "total_count": result["total_count"]
+            })
+        else:
+            return JSONResponse(content={"error": result["error"]}, status_code=400)
+            
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.delete("/cloudinary/delete/{public_id}")
+async def delete_cloudinary_file(public_id: str):
+    """Delete file from Cloudinary"""
+    try:
+        result = cloudinary_service.delete_file(public_id)
+        
+        if result["success"]:
+            return JSONResponse(content={
+                "message": "File deleted successfully",
+                "result": result["result"]
+            })
+        else:
+            return JSONResponse(content={"error": result["error"]}, status_code=400)
+            
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
