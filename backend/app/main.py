@@ -105,6 +105,13 @@ async def convert_jpg_to_glb(
     if file.content_type not in ("image/jpeg", "image/jpg"):
         return JSONResponse({"error": "Upload a JPG/JPEG file."}, status_code=400)
     
+    # Check file size (100MB limit)
+    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+    if file.size and file.size > MAX_FILE_SIZE:
+        return JSONResponse({
+            "error": f"File too large. Maximum size is 100MB, got {file.size / (1024*1024):.1f}MB"
+        }, status_code=413)
+    
     try:
         # Read image data
         image_data = await file.read()
@@ -390,6 +397,13 @@ async def convert_cad_to_glb(
     # Check file type - only accept DXF files
     if not file.filename.lower().endswith('.dxf'):
         return JSONResponse({"error": "Upload a DXF file."}, status_code=400)
+    
+    # Check file size (100MB limit)
+    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+    if file.size and file.size > MAX_FILE_SIZE:
+        return JSONResponse({
+            "error": f"File too large. Maximum size is 100MB, got {file.size / (1024*1024):.1f}MB"
+        }, status_code=413)
     
     try:
         # Read CAD data
