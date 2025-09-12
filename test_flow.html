@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Floor Plan Editor Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        input[type="file"] { margin: 10px 0; }
+        #results { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>3D Floor Plan Editor - Complete Flow Test</h1>
+    
+    <div class="test-section">
+        <h3>1. Backend Health Check</h3>
+        <button onclick="testBackend()">Test Backend</button>
+        <div id="backend-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>2. Frontend Load Test</h3>
+        <button onclick="testFrontend()">Test Frontend</button>
+        <div id="frontend-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>3. File Upload Test</h3>
+        <input type="file" id="testFile" accept=".jpg,.jpeg,.dxf" />
+        <button onclick="testUpload()">Test Upload & Conversion</button>
+        <div id="upload-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>4. Open 3D Editor</h3>
+        <button onclick="openEditor()">Open 3D Floor Plan Editor</button>
+        <p>This will open the actual 3D editor in a new tab where you can test:</p>
+        <ul>
+            <li>Upload JPG/DXF files</li>
+            <li>Convert to 3D</li>
+            <li>Add furniture (chairs, tables, sofas)</li>
+            <li>Change wall colors</li>
+            <li>Edit furniture properties</li>
+        </ul>
+    </div>
+    
+    <div id="results"></div>
+
+    <script>
+        async function testBackend() {
+            const resultDiv = document.getElementById('backend-result');
+            try {
+                const response = await fetch('http://localhost:8000/health');
+                const data = await response.json();
+                if (data.ok) {
+                    resultDiv.innerHTML = '<span style="color: green;">✅ Backend is running and healthy</span>';
+                } else {
+                    resultDiv.innerHTML = '<span style="color: red;">❌ Backend returned unexpected response</span>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span style="color: red;">❌ Backend error: ${error.message}</span>`;
+            }
+        }
+        
+        async function testFrontend() {
+            const resultDiv = document.getElementById('frontend-result');
+            try {
+                const response = await fetch('http://localhost:8083');
+                if (response.ok) {
+                    resultDiv.innerHTML = '<span style="color: green;">✅ Frontend is accessible</span>';
+                } else {
+                    resultDiv.innerHTML = '<span style="color: red;">❌ Frontend not accessible</span>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span style="color: red;">❌ Frontend error: ${error.message}</span>`;
+            }
+        }
+        
+        async function testUpload() {
+            const fileInput = document.getElementById('testFile');
+            const resultDiv = document.getElementById('upload-result');
+            
+            if (!fileInput.files[0]) {
+                resultDiv.innerHTML = '<span style="color: orange;">⚠️ Please select a file first</span>';
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            const fileType = file.name.toLowerCase().split('.').pop();
+            let endpoint = '';
+            
+            if (['jpg', 'jpeg'].includes(fileType)) {
+                endpoint = 'http://localhost:8000/convert/jpg-to-glb';
+            } else if (fileType === 'dxf') {
+                endpoint = 'http://localhost:8000/convert/cad-to-glb';
+            } else {
+                resultDiv.innerHTML = '<span style="color: red;">❌ Unsupported file type</span>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<span style="color: blue;">🔄 Testing upload...</span>';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData,
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    resultDiv.innerHTML = `<span style="color: green;">✅ Upload successful! Generated ${blob.size} bytes of 3D data</span>`;
+                } else {
+                    const errorText = await response.text();
+                    resultDiv.innerHTML = `<span style="color: red;">❌ Upload failed: ${response.status} - ${errorText}</span>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span style="color: red;">❌ Upload error: ${error.message}</span>`;
+            }
+        }
+        
+        function openEditor() {
+            window.open('http://localhost:8083', '_blank');
+        }
+    </script>
+</body>
+</html>
