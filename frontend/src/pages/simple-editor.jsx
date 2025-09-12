@@ -266,6 +266,12 @@ export default function SimpleEditor() {
   const [showWallColorPicker, setShowWallColorPicker] = useState(false);
   const [forceWallMode, setForceWallMode] = useState(false);
   
+  // Furniture library state
+  const [showFurnitureLibrary, setShowFurnitureLibrary] = useState(false);
+  
+  // Track if floor plan is loaded
+  const [isFloorPlanLoaded, setIsFloorPlanLoaded] = useState(false);
+  
   // Predefined wall colors
   const wallColors = [
     { name: "White", value: "#FFFFFF" },
@@ -279,16 +285,42 @@ export default function SimpleEditor() {
     { name: "Beige", value: "#F5F5DC" },
     { name: "Light Purple", value: "#F3E5F5" }
   ];
+  
+  // Furniture library data
+  const furnitureLibrary = [
+    {
+      id: "chair",
+      name: "Chair",
+      description: "Modern office chair",
+      icon: "🪑",
+      model: "/chair.glb",
+      preview: "https://via.placeholder.com/150x150/4A90E2/FFFFFF?text=Chair",
+      category: "Seating"
+    },
+    {
+      id: "table",
+      name: "Table",
+      description: "Dining table",
+      icon: "🪑",
+      model: "/table.glb", 
+      preview: "https://via.placeholder.com/150x150/7ED321/FFFFFF?text=Table",
+      category: "Tables"
+    },
+    {
+      id: "sofa",
+      name: "Sofa",
+      description: "Comfortable 3-seater sofa",
+      icon: "🛋️",
+      model: "/sofa.glb",
+      preview: "https://via.placeholder.com/150x150/F5A623/FFFFFF?text=Sofa",
+      category: "Seating"
+    }
+  ];
 
   useEffect(() => {
-    const data = localStorage.getItem("layout");
-    if (data) {
-      try {
-        setPlaced(JSON.parse(data));
-      } catch (e) {
-        console.error("Failed to load layout:", e);
-      }
-    }
+    // Clear any existing layout data on component mount
+    localStorage.removeItem("layout");
+    setPlaced([]);
   }, []);
 
   const addFurnitureAt = (point) => {
@@ -317,6 +349,13 @@ export default function SimpleEditor() {
     setPlaced((p) => p.map((item) =>
       item.id === selectedId ? { ...item, ...changes } : item
     ));
+  };
+
+  const selectFurniture = (type) => {
+    setPlacingType(type);
+    setSelectedId(null);
+    setIsAddingMode(true);
+    setShowFurnitureLibrary(false); // Close library after selection
   };
 
   const deleteSelected = () => {
@@ -438,6 +477,9 @@ export default function SimpleEditor() {
       setPlaced([]);
       setSelectedId(null);
       
+      // Enable editing functionality
+      setIsFloorPlanLoaded(true);
+      
       // Show success message in UI instead of alert
       const message = document.createElement('div');
       message.textContent = `Floor plan "${file.name}" loaded successfully!`;
@@ -462,6 +504,7 @@ export default function SimpleEditor() {
     setUploadedFloor(null);
     setPlaced([]);
     setSelectedId(null);
+    setIsFloorPlanLoaded(false);
   };
 
   const changeColor = (color) => {
@@ -567,88 +610,147 @@ export default function SimpleEditor() {
           </div>
           
         </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <h3>Furniture Library</h3>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <button 
-              onClick={() => setPlacingType("chair")}
-              style={{ 
-                padding: "8px 16px", 
-                backgroundColor: placingType === "chair" ? "#28a745" : "#6c757d",
-                color: "white",
-                border: placingType === "chair" ? "2px solid #20c997" : "2px solid transparent",
-                borderRadius: 4,
-                cursor: "pointer",
-                fontWeight: placingType === "chair" ? "bold" : "normal"
-              }}
-            >
-              {placingType === "chair" ? "✓ " : ""}Place Chair
-            </button>
-            <button 
-              onClick={() => setPlacingType("table")}
-              style={{ 
-                padding: "8px 16px", 
-                backgroundColor: placingType === "table" ? "#28a745" : "#6c757d",
-                color: "white",
-                border: placingType === "table" ? "2px solid #20c997" : "2px solid transparent",
-                borderRadius: 4,
-                cursor: "pointer",
-                fontWeight: placingType === "table" ? "bold" : "normal"
-              }}
-            >
-              {placingType === "table" ? "✓ " : ""}Place Table
-            </button>
-            <button 
-              onClick={() => setPlacingType("sofa")}
-              style={{ 
-                padding: "8px 16px", 
-                backgroundColor: placingType === "sofa" ? "#28a745" : "#6c757d",
-                color: "white",
-                border: placingType === "sofa" ? "2px solid #20c997" : "2px solid transparent",
-                borderRadius: 4,
-                cursor: "pointer",
-                fontWeight: placingType === "sofa" ? "bold" : "normal"
-              }}
-            >
-              {placingType === "sofa" ? "✓ " : ""}Place Sofa
-            </button>
-          </div>
-          <small style={{ color: "#666" }}>
-            {placingType ? `Click on the floor to place a ${placingType} (one-time placement)` : "Select a furniture type above first"}
-          </small>
-          {placingType && (
-            <div style={{ 
-              marginTop: 8, 
-              padding: 8, 
-              backgroundColor: placingType === "chair" ? "#e3f2fd" : placingType === "table" ? "#f3e5f5" : "#e8f5e8", 
-              borderRadius: 4,
-              fontSize: 12,
+        
+        {isFloorPlanLoaded && (
+          <div style={{ marginBottom: 20 }}>
+            <h3>Furniture Library</h3>
+          {/* Main Library Button */}
+          <button
+            onClick={() => setShowFurnitureLibrary(!showFurnitureLibrary)}
+            style={{
+              width: "100%",
+              padding: "12px 16px",
+              backgroundColor: showFurnitureLibrary ? "#007bff" : "#6c757d",
+              color: "white",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontSize: 14,
               fontWeight: "bold",
-              border: "2px solid #28a745",
-              animation: "pulse 1s infinite"
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              marginBottom: 8
+            }}
+          >
+            <span>🏠</span>
+            {showFurnitureLibrary ? "Close Library" : "Open Furniture Library"}
+          </button>
+          
+          {/* Furniture Library Sidebar */}
+          {showFurnitureLibrary && (
+            <div style={{
+              marginBottom: 8,
+              padding: 12,
+              backgroundColor: "#f8f9fa",
+              borderRadius: 6,
+              border: "1px solid #dee2e6"
             }}>
-              🎯 Currently placing: {placingType.toUpperCase()}
+              <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 8, color: "#495057" }}>
+                Choose Furniture:
+              </div>
+              
+              <div style={{ display: "grid", gap: 8 }}>
+                {furnitureLibrary.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => selectFurniture(item.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "8px 12px",
+                      backgroundColor: placingType === item.id ? "#e3f2fd" : "white",
+                      border: placingType === item.id ? "2px solid #2196f3" : "1px solid #dee2e6",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                      boxShadow: placingType === item.id ? "0 2px 4px rgba(33, 150, 243, 0.3)" : "0 1px 2px rgba(0,0,0,0.1)"
+                    }}
+                  >
+                    {/* Furniture Icon/Preview */}
+                    <div style={{
+                      width: 40,
+                      height: 40,
+                      backgroundColor: "#e9ecef",
+                      borderRadius: 4,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 20
+                    }}>
+                      {item.icon}
+                    </div>
+                    
+                    {/* Furniture Info */}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ 
+                        fontSize: 14, 
+                        fontWeight: "bold", 
+                        color: placingType === item.id ? "#1976d2" : "#212529",
+                        marginBottom: 2
+                      }}>
+                        {item.name}
+                      </div>
+                      <div style={{ 
+                        fontSize: 11, 
+                        color: "#6c757d" 
+                      }}>
+                        {item.description}
+                      </div>
+                      <div style={{ 
+                        fontSize: 10, 
+                        color: "#868e96",
+                        marginTop: 2
+                      }}>
+                        {item.category}
+                      </div>
+                    </div>
+                    
+                    {/* Selection Indicator */}
+                    {placingType === item.id && (
+                      <div style={{
+                        width: 20,
+                        height: 20,
+                        backgroundColor: "#2196f3",
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "white",
+                        fontSize: 12
+                      }}>
+                        ✓
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              
+              {/* Instructions */}
+              <div style={{
+                marginTop: 12,
+                padding: 8,
+                backgroundColor: "#fff3cd",
+                border: "1px solid #ffeaa7",
+                borderRadius: 4,
+                fontSize: 11,
+                color: "#856404"
+              }}>
+                💡 Click on a furniture item above, then click in the 3D view to place it
+              </div>
             </div>
           )}
-        </div>
+          {/* Instructions */}
+          <small style={{ color: "#666", display: "block", marginTop: 8 }}>
+            {placingType ? `Click on the floor to place a ${furnitureLibrary.find(f => f.id === placingType)?.name || placingType} (one-time placement)` : "Open the library above to select furniture"}
+          </small>
+          </div>
+        )}
 
-        <hr />
+  
 
-        <div style={{ marginBottom: 20 }}>
-          <h3>Selected Item</h3>
-          {selectedItem ? (
-            <div>
-              <p><strong>Type:</strong> {selectedItem.type}</p>
-              <p><strong>ID:</strong> {selectedItem.id}</p>
-              <p><strong>Position:</strong> [{selectedItem.position.map(p => p.toFixed(2)).join(", ")}]</p>
-              <p><strong>Rotation:</strong> [{selectedItem.rotation.map(r => (r * 180 / Math.PI).toFixed(1)).join(", ")}°]</p>
-              <p><strong>Scale:</strong> [{selectedItem.scale.map(s => s.toFixed(2)).join(", ")}]</p>
-            </div>
-          ) : (
-            <p style={{ color: "#666" }}>No item selected</p>
-          )}
-        </div>
 
         {selectedItem && (
           <div style={{ marginBottom: 20 }}>
@@ -751,10 +853,9 @@ export default function SimpleEditor() {
           </div>
         )}
 
-        <hr />
-
-        <div style={{ marginBottom: 20 }}>
-          <h3>Wall Color</h3>
+        {isFloorPlanLoaded && (
+          <div style={{ marginBottom: 20 }}>
+            <h3>Wall Color</h3>
           
           {/* Current color display */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -855,10 +956,12 @@ export default function SimpleEditor() {
               />
             </div>
           )}
-        </div>
+          </div>
+        )}
 
-        <div>
-          <h3>Layout</h3>
+        {isFloorPlanLoaded && (
+          <div>
+            <h3>Layout</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <button 
               onClick={saveLayout}
@@ -903,7 +1006,8 @@ export default function SimpleEditor() {
           <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
             Items: {placed.length}
           </p>
-        </div>
+          </div>
+        )}
       </div>
 
       <div style={{ flex: 1 }}>
